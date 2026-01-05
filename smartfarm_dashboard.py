@@ -1,43 +1,80 @@
 import streamlit as st
 import requests
 import pandas as pd
+from datetime import datetime
 
-st.set_page_config(page_title="Smart Farming Dashboard", layout="centered")
-
-st.title("🌱 Smart Farming Dashboard")
-st.caption("Monitoring Suhu & Kelembaban (ESP32 → Firebase)")
+# ================= CONFIG =================
+st.set_page_config(
+    page_title="Smart Farming Dashboard",
+    layout="wide"
+)
 
 FIREBASE_URL = "https://dhtttt-17fe2-default-rtdb.firebaseio.com/smartfarm/dht11.json"
 
-response = requests.get(FIREBASE_URL)
+# ================= INIT SESSION =================
+if "history" not in st.session_state:
+    st.session_state.history = pd.DataFrame(
+        columns=["time", "temperature", "humidity"]
+    )
 
-if response.status_code == 200:
-    data = response.json()
+# ================= UI =================
+st.title("🌱 Smart Farming Dashboard")
+st.caption("Monitoring Suhu & Kelembaban (ESP32 → Firebase)")
 
-    if data:
-        # ubah JSON ke DataFrame
-        df = pd.DataFrame.from_dict(data, orient="index")
+# Tombol refresh manual
+refresh = st.button("🔄 Ambil Data Terbaru")
 
-        df.index.name = "timestamp"
-        df.reset_index(inplace=True)
+# ================= FETCH DATA =================
+try:
+    response = requests.get(FIREBASE_URL, timeout=10)
 
-        # tampilkan nilai terbaru
-        latest = df.iloc[-1]
+    if response.status_code == 200:
+        data = response.json()
 
-        col1, col2 = st.columns(2)
-        col1.metric("🌡️ Suhu (°C)", f"{latest['temperature']}")
-        col2.metric("💧 Kelembaban (%)", f"{latest['humidity']}")
+        if data:
+            temp = float(data.get("temperature", 0))
+            hum = float(data.get("humidity", 0))
+            now = datetime.now().strftime("%H:%M:%S")
 
-        st.subheader("📈 Grafik Suhu")
-        st.line_chart(df.set_index("timestamp")["temperature"])
+            # Simpan histori
+            new_row = {
+                "time": now,
+                "temperature": temp,
+                "humidity": hum
+            }
 
-        st.subheader("📈 Grafik Kelembaban")
-        st.line_chart(df.set_index("timestamp")["humidity"])
+            st.session_state.history = pd.concat(
+                [
+                    st.session_state.history,
+                    pd.DataFrame([new_row])
+                ],
+                ignore_index=True
+            )
 
-        with st.expander("📋 Histori Data"):
-            st.dataframe(df)
+            # ================= METRIC =================
+            col1, col2 = st.columns(2)
+            col1.metric("🌡️ Suhu (°C)", f"{temp}")
+            col2.metric("💧 Kelembaban (%)", f"{hum}")
+
+        else:
+            st.warning("Data kosong di Firebase")
 
     else:
-        st.warning("Belum ada data di Firebase")
+        st.error("Gagal mengambil data dari Firebase")
+
+except Exception as e:
+    st.error(f"Koneksi error: {e}")
+
+# ================= GRAFIK =================
+st.subheader("📈 Grafik Realtime")
+
+if not st.session_state.history.empty:
+    chart_df = st.session_state.history.set_index("time")
+
+    st.line_chart(chart_df)
 else:
-    st.error("Gagal mengambil data dari Firebase")
+    st.info("Belum ada data histori")
+
+# ================= TABEL =================
+st.subheader("📋 Histori Data")
+st.dataframe(st.session_state.history, use_container_width=True)
