@@ -1,22 +1,53 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, db
+import requests
 
-st.title("Smart Farming Dashboard 🌱")
-st.subheader("Realtime DHT11 Monitoring")
+# ---------------- CONFIG ----------------
+st.set_page_config(
+    page_title="Smart Farming Dashboard",
+    layout="centered"
+)
 
-if not firebase_admin._apps:
-    firebase_config = dict(st.secrets["firebase"])
-    cred = credentials.Certificate(firebase_config)
-    firebase_admin.initialize_app(cred, {
-        "databaseURL": "https://dhtttt-17fe2-default-rtdb.firebaseio.com"
-    })
+FIREBASE_URL = "https://dhtttt-17fe2-default-rtdb.firebaseio.com/smartfarm/dht11.json"
 
-ref = db.reference("smartfarm/dht11")
-data = ref.get()
+# ---------------- UI ----------------
+st.title("🌱 Smart Farming Dashboard")
+st.caption("Monitoring Suhu & Kelembaban (ESP32 → Firebase)")
 
-if data:
-    st.metric("Temperature (°C)", data.get("temperature"))
-    st.metric("Humidity (%)", data.get("humidity"))
-else:
-    st.warning("Belum ada data dari ESP32")
+st.divider()
+
+# Tombol refresh manual
+if st.button("🔄 Ambil Data Terbaru"):
+    st.experimental_set_query_params(refresh="1")
+
+# ---------------- FETCH DATA ----------------
+try:
+    response = requests.get(FIREBASE_URL, timeout=10)
+
+    if response.status_code == 200:
+        data = response.json()
+
+        if data:
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.metric(
+                    label="🌡️ Suhu (°C)",
+                    value=f"{data.get('temperature', '-')} °C"
+                )
+
+            with col2:
+                st.metric(
+                    label="💧 Kelembaban (%)",
+                    value=f"{data.get('humidity', '-')} %"
+                )
+
+            st.success("Data berhasil ditampilkan")
+        else:
+            st.warning("⚠️ Data belum tersedia di Firebase")
+
+    else:
+        st.error("❌ Gagal mengambil data dari Firebase")
+
+except requests.exceptions.RequestException:
+    st.error("🚫 Tidak dapat terhubung ke Firebase")
+
