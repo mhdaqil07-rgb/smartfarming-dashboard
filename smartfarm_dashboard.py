@@ -1,53 +1,33 @@
 import streamlit as st
 import requests
 
-# ---------------- CONFIG ----------------
-st.set_page_config(
-    page_title="Smart Farming Dashboard",
-    layout="centered"
-)
+st.set_page_config(page_title="Smart Farming Dashboard")
 
-FIREBASE_URL = "https://dhtttt-17fe2-default-rtdb.firebaseio.com/smartfarm/dht11.json"
-
-# ---------------- UI ----------------
 st.title("🌱 Smart Farming Dashboard")
 st.caption("Monitoring Suhu & Kelembaban (ESP32 → Firebase)")
 
-st.divider()
+FIREBASE_URL = "https://dhtttt-17fe2-default-rtdb.firebaseio.com/smartfarm/dht11.json"
 
-# Tombol refresh manual
-if st.button("🔄 Ambil Data Terbaru"):
-    st.experimental_set_query_params(refresh="1")
+response = requests.get(FIREBASE_URL, timeout=10)
+data = response.json()
 
-# ---------------- FETCH DATA ----------------
-try:
-    response = requests.get(FIREBASE_URL, timeout=10)
+if data:
+    col1, col2 = st.columns(2)
 
-    if response.status_code == 200:
-        data = response.json()
+    with col1:
+        st.metric(
+            "🌡️ Suhu (°C)",
+            float(data["temperature"]),
+            key=f"suhu_{data['timestamp']}"
+        )
 
-        if data:
-            col1, col2 = st.columns(2)
+    with col2:
+        st.metric(
+            "💧 Kelembaban (%)",
+            float(data["humidity"]),
+            key=f"hum_{data['timestamp']}"
+        )
 
-            with col1:
-                st.metric(
-                    label="🌡️ Suhu (°C)",
-                    value=f"{data.get('temperature', '-')} °C"
-                )
-
-            with col2:
-                st.metric(
-                    label="💧 Kelembaban (%)",
-                    value=f"{data.get('humidity', '-')} %"
-                )
-
-            st.success("Data berhasil ditampilkan")
-        else:
-            st.warning("⚠️ Data belum tersedia di Firebase")
-
-    else:
-        st.error("❌ Gagal mengambil data dari Firebase")
-
-except requests.exceptions.RequestException:
-    st.error("🚫 Tidak dapat terhubung ke Firebase")
-
+    st.caption(f"Last update: {data['timestamp']}")
+else:
+    st.warning("Data belum tersedia")
