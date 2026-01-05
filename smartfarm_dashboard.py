@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
+import time
 
 # ================= CONFIG =================
 st.set_page_config(
@@ -11,70 +12,75 @@ st.set_page_config(
 
 FIREBASE_URL = "https://dhtttt-17fe2-default-rtdb.firebaseio.com/smartfarm/dht11.json"
 
+REFRESH_INTERVAL = 5  # detik
+
 # ================= INIT SESSION =================
 if "history" not in st.session_state:
     st.session_state.history = pd.DataFrame(
         columns=["time", "temperature", "humidity"]
     )
 
+if "last_update" not in st.session_state:
+    st.session_state.last_update = 0
+
 # ================= UI =================
 st.title("🌱 Smart Farming Dashboard")
 st.caption("Monitoring Suhu & Kelembaban (ESP32 → Firebase)")
+st.info(f"Auto refresh setiap {REFRESH_INTERVAL} detik")
 
-# Tombol refresh manual
-refresh = st.button("🔄 Ambil Data Terbaru")
+# ================= AUTO REFRESH LOGIC =================
+current_time = time.time()
 
-# ================= FETCH DATA =================
-try:
-    response = requests.get(FIREBASE_URL, timeout=10)
+if current_time - st.session_state.last_update >= REFRESH_INTERVAL:
+    try:
+        response = requests.get(FIREBASE_URL, timeout=10)
 
-    if response.status_code == 200:
-        data = response.json()
+        if response.status_code == 200:
+            data = response.json()
 
-        if data:
-            temp = float(data.get("temperature", 0))
-            hum = float(data.get("humidity", 0))
-            now = datetime.now().strftime("%H:%M:%S")
+            if data:
+                temp = float(data.get("temperature", 0))
+                hum = float(data.get("humidity", 0))
+                now = datetime.now().strftime("%H:%M:%S")
 
-            # Simpan histori
-            new_row = {
-                "time": now,
-                "temperature": temp,
-                "humidity": hum
-            }
+                new_row = {
+                    "time": now,
+                    "temperature": temp,
+                    "humidity": hum
+                }
 
-            st.session_state.history = pd.concat(
-                [
-                    st.session_state.history,
-                    pd.DataFrame([new_row])
-                ],
-                ignore_index=True
-            )
+                st.session_state.history = pd.concat(
+                    [
+                        st.session_state.history,
+                        pd.DataFrame([new_row])
+                    ],
+                    ignore_index=True
+                )
 
-            # ================= METRIC =================
-            col1, col2 = st.columns(2)
-            col1.metric("🌡️ Suhu (°C)", f"{temp}")
-            col2.metric("💧 Kelembaban (%)", f"{hum}")
+                st.session_state.last_update = current_time
 
-        else:
-            st.warning("Data kosong di Firebase")
+    except Exception as e:
+        st.warning(f"Koneksi error: {e}")
 
-    else:
-        st.error("Gagal mengambil data dari Firebase")
+# ================= METRIC =================
+if not st.session_state.history.empty:
+    latest = st.session_state.history.iloc[-1]
 
-except Exception as e:
-    st.error(f"Koneksi error: {e}")
+    col1, col2 = st.columns(2)
+    col1.metric("🌡️ Suhu (°C)", f"{latest['temperature']}")
+    col2.metric("💧 Kelembaban (%)", f"{latest['humidity']}")
 
 # ================= GRAFIK =================
 st.subheader("📈 Grafik Realtime")
 
 if not st.session_state.history.empty:
     chart_df = st.session_state.history.set_index("time")
-
     st.line_chart(chart_df)
-else:
-    st.info("Belum ada data histori")
 
 # ================= TABEL =================
 st.subheader("📋 Histori Data")
 st.dataframe(st.session_state.history, use_container_width=True)
+
+# ================= AUTO RERUN HALUS =================
+time.sleep(1)
+st.rerun()
